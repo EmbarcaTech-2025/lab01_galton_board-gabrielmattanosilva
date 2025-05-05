@@ -8,16 +8,16 @@
 const uint I2C_SDA = 14;
 const uint I2C_SCL = 15;
 
-// Configurações aprimoradas
+// Configurações aprimoradas (com espaçamento reduzido entre linhas)
 #define BALL_SIZE 2
-#define GRAVITY 0.07f // Gravidade mais suave
-#define NUM_BINS 8
+#define GRAVITY 0.07f
+#define NUM_BINS 16
 #define BIN_WIDTH (ssd1306_width / NUM_BINS)
-#define NUM_PIN_ROWS 6                                    // 6 linhas de obstáculos
-#define PIN_SPACING (ssd1306_height / (NUM_PIN_ROWS + 2)) // Ajuste para espaço antes da 1ª linha
-#define MAX_BALLS 10                                      // Número máximo de bolas simultâneas
-#define BALL_SPAWN_DELAY 20                               // Delay entre spawn de novas bolas
-#define INITIAL_Y_POS 5                                   // Posição Y inicial (acima da primeira linha de obstáculos)
+#define NUM_PIN_ROWS 6
+#define PIN_SPACING ((ssd1306_height - INITIAL_Y_POS - 6) / NUM_PIN_ROWS - 2) // Reduz 2px do espaçamento
+#define MAX_BALLS 10
+#define BALL_SPAWN_DELAY 20
+#define INITIAL_Y_POS 5
 
 typedef struct
 {
@@ -32,7 +32,6 @@ int ball_count = 0;
 int total_balls = 0;
 absolute_time_t last_spawn_time;
 
-// Função de decisão aleatória
 bool random_direction()
 {
     return rand() % 2;
@@ -40,10 +39,10 @@ bool random_direction()
 
 void init_ball(ball_t *ball)
 {
-    ball->x = ssd1306_width / 2 + (rand() % 5) - 2; // Pequena variação inicial
-    ball->y = INITIAL_Y_POS;                        // Inicia acima da primeira linha de obstáculos
+    ball->x = ssd1306_width / 2 + (rand() % 5) - 2;
+    ball->y = INITIAL_Y_POS;
     ball->vx = 0;
-    ball->vy = 0.1f; // Pequena velocidade vertical inicial
+    ball->vy = 0.1f;
     ball->active = true;
     ball->spawn_timer = 0;
 }
@@ -57,24 +56,22 @@ void update_ball(ball_t *ball)
     ball->x += ball->vx;
     ball->y += ball->vy;
 
-    // Colisão com pinos (6 linhas)
+    // Colisão com pinos (com espaçamento reduzido)
     for (int row = 1; row <= NUM_PIN_ROWS; row++)
     {
-        int pin_y = row * PIN_SPACING + INITIAL_Y_POS; // Ajuste para posicionar corretamente
+        int pin_y = INITIAL_Y_POS + 8 + (row * (PIN_SPACING)); // Início ajustado + espaçamento reduzido
         if (ball->y >= pin_y - 2 && ball->y <= pin_y + 2 && ball->vy > 0)
         {
-            ball->vx = random_direction() ? 0.4f : -0.4f; // Velocidade ajustada
+            ball->vx = random_direction() ? 0.4f : -0.4f;
             break;
         }
     }
 
-    // Limites horizontais
     if (ball->x < 0)
         ball->x = 0;
     if (ball->x > ssd1306_width - BALL_SIZE)
         ball->x = ssd1306_width - BALL_SIZE;
 
-    // Fundo do display
     if (ball->y >= ssd1306_height - BALL_SIZE)
     {
         ball->active = false;
@@ -105,13 +102,11 @@ void draw_pins(uint8_t *buffer)
 {
     for (int row = 1; row <= NUM_PIN_ROWS; row++)
     {
-        int y = row * PIN_SPACING + INITIAL_Y_POS; // Ajuste para posicionar corretamente
-        // Padrão triangular (linhas alternadas)
+        int y = INITIAL_Y_POS + 8 + (row * (PIN_SPACING)); // Linhas mais compactadas
         int start_x = (row % 2) ? BIN_WIDTH / 2 : 0;
         for (int x = start_x; x < ssd1306_width; x += BIN_WIDTH)
         {
             ssd1306_set_pixel(buffer, x, y, true);
-            // Desenha pequenos obstáculos (2x2 pixels)
             ssd1306_set_pixel(buffer, x, y + 1, true);
             ssd1306_set_pixel(buffer, x + 1, y, true);
             ssd1306_set_pixel(buffer, x + 1, y + 1, true);
@@ -147,17 +142,14 @@ int main()
 {
     stdio_init_all();
 
-    // Inicialização do I2C
     i2c_init(i2c1, 400 * 1000);
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_SDA);
     gpio_pull_up(I2C_SCL);
 
-    // Inicialização do display
     ssd1306_init();
 
-    // Área de renderização
     struct render_area area = {
         .start_column = 0,
         .end_column = ssd1306_width - 1,
@@ -167,7 +159,6 @@ int main()
 
     uint8_t buffer[ssd1306_buffer_length];
 
-    // Inicialização das bolas
     for (int i = 0; i < MAX_BALLS; i++)
     {
         balls[i].active = false;
@@ -176,31 +167,25 @@ int main()
 
     while (true)
     {
-        // Limpa o buffer
         memset(buffer, 0, sizeof(buffer));
 
-        // Gera novas bolas
         spawn_new_ball();
 
-        // Atualiza e desenha todas as bolas
         for (int i = 0; i < MAX_BALLS; i++)
         {
             update_ball(&balls[i]);
             draw_ball(buffer, &balls[i]);
         }
 
-        // Desenha os pinos (6 linhas)
         draw_pins(buffer);
 
-        // Mostra o contador
         char text[20];
         sprintf(text, "Total: %d", total_balls);
         ssd1306_draw_string(buffer, 5, 5, text);
 
-        // Atualiza o display
         render_on_display(buffer, &area);
 
-        sleep_ms(16); // ~60 FPS
+        sleep_ms(16);
     }
 
     return 0;
