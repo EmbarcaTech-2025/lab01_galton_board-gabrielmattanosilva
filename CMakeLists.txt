@@ -36,7 +36,7 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(lab-01-galton-board
-  ./src/lab-01-galton-board.c 
+  ./src/main.c
   ./include/ssd1306_i2c.c
 )
 
@@ -58,9 +58,8 @@ target_include_directories(lab-01-galton-board PRIVATE
 )
 
 # Add any user requested libraries
-target_link_libraries(lab-01-galton-board 
+target_link_libraries(lab-01-galton-board
         hardware_i2c
-        
         )
 
 pico_add_extra_outputs(lab-01-galton-board)
