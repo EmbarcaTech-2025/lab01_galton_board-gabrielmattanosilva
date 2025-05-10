@@ -1,17 +1,21 @@
 
 # Projetos de Sistemas Embarcados - EmbarcaTech 2025
 
-Autor: **Insira Seu Nome**
+Autor: **Gabriel Mattano da Silva**
 
 Curso: Residência Tecnológica em Sistemas Embarcados
 
 Instituição: EmbarcaTech - HBr
 
-Campinas, ___ de 2025
+Campinas, 9 de Maio de 2025
 
 ---
 
-<!-- INSIRA O CONTEÚDO DO SEU README AQUI! -->
+Simulação de uma Galton board utilizando a BitDogLab.
+
+Observações:
+- Para plotar o histograma o botão A deve ser pressionado.
+- No topo do display há um contador de ticks do sistema (T) e um contador do total de bolas utilizadas na simulação (B).
 
 ---
 
