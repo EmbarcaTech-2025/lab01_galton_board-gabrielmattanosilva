@@ -3,34 +3,39 @@
 #include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include "hardware/gpio.h"
 #include "include/ssd1306.h"
+
+// Definição do pino do botão A (GPIO10)
+#define BUTTON_A_PIN 5
 
 const uint I2C_SDA = 14;
 const uint I2C_SCL = 15;
 
-// Configurações aprimoradas (com espaçamento reduzido entre linhas)
+// Configurações ajustadas
 #define BALL_SIZE 2
 #define GRAVITY 0.07f
 #define NUM_BINS 16
 #define BIN_WIDTH (ssd1306_width / NUM_BINS)
-#define NUM_PIN_ROWS 6
-#define PIN_SPACING ((ssd1306_height - INITIAL_Y_POS - 6) / NUM_PIN_ROWS - 2) // Reduz 2px do espaçamento
-#define MAX_BALLS 10
-#define BALL_SPAWN_DELAY 20
+#define NUM_PIN_ROWS 8
+#define PIN_SPACING ((ssd1306_height - INITIAL_Y_POS - 6) / NUM_PIN_ROWS - 2)
+#define MAX_BALLS 30
+#define BALL_SPAWN_RATE 1
 #define INITIAL_Y_POS 5
+#define HISTOGRAM_HEIGHT 20  // Altura máxima do histograma
 
 typedef struct
 {
     float x, y;
     float vx, vy;
     bool active;
-    int spawn_timer;
 } ball_t;
 
 ball_t balls[MAX_BALLS];
-int ball_count = 0;
 int total_balls = 0;
-absolute_time_t last_spawn_time;
+int frame_count = 0;
+int bins[NUM_BINS] = {0};  // Array para contar as bolas em cada canaleta
+bool show_histogram = false;  // Flag para controlar a exibição do histograma
 
 bool random_direction()
 {
@@ -44,7 +49,6 @@ void init_ball(ball_t *ball)
     ball->vx = 0;
     ball->vy = 0.1f;
     ball->active = true;
-    ball->spawn_timer = 0;
 }
 
 void update_ball(ball_t *ball)
@@ -56,13 +60,13 @@ void update_ball(ball_t *ball)
     ball->x += ball->vx;
     ball->y += ball->vy;
 
-    // Colisão com pinos (com espaçamento reduzido)
+    // Colisão com pinos
     for (int row = 1; row <= NUM_PIN_ROWS; row++)
     {
-        int pin_y = INITIAL_Y_POS + 8 + (row * (PIN_SPACING)); // Início ajustado + espaçamento reduzido
+        int pin_y = INITIAL_Y_POS + 8 + (row * PIN_SPACING);
         if (ball->y >= pin_y - 2 && ball->y <= pin_y + 2 && ball->vy > 0)
         {
-            ball->vx = random_direction() ? 0.4f : -0.4f;
+            ball->vx = random_direction() ? 3.0f : -3.0f;
             break;
         }
     }
@@ -72,11 +76,34 @@ void update_ball(ball_t *ball)
     if (ball->x > ssd1306_width - BALL_SIZE)
         ball->x = ssd1306_width - BALL_SIZE;
 
+    // Chegada ao fundo - atualiza o histograma
     if (ball->y >= ssd1306_height - BALL_SIZE)
     {
-        ball->active = false;
-        ball_count--;
+        // Determina em qual bin a bola caiu
+        int bin = (int)(ball->x / BIN_WIDTH);
+        if (bin >= 0 && bin < NUM_BINS)
+        {
+            bins[bin]++;
+        }
+        init_ball(ball); // Reinicia a bola no topo
     }
+}
+
+void spawn_balls()
+{
+    if (frame_count % BALL_SPAWN_RATE == 0)
+    {
+        total_balls++;
+        for (int i = 0; i < MAX_BALLS; i++)
+        {
+            if (!balls[i].active)
+            {
+                init_ball(&balls[i]);
+                break;
+            }
+        }
+    }
+    frame_count++;
 }
 
 void draw_ball(uint8_t *buffer, ball_t *ball)
@@ -102,7 +129,7 @@ void draw_pins(uint8_t *buffer)
 {
     for (int row = 1; row <= NUM_PIN_ROWS; row++)
     {
-        int y = INITIAL_Y_POS + 8 + (row * (PIN_SPACING)); // Linhas mais compactadas
+        int y = INITIAL_Y_POS + 8 + (row * PIN_SPACING);
         int start_x = (row % 2) ? BIN_WIDTH / 2 : 0;
         for (int x = start_x; x < ssd1306_width; x += BIN_WIDTH)
         {
@@ -114,25 +141,34 @@ void draw_pins(uint8_t *buffer)
     }
 }
 
-void spawn_new_ball()
+void draw_histogram(uint8_t *buffer)
 {
-    if (ball_count >= MAX_BALLS)
-        return;
-
-    absolute_time_t now = get_absolute_time();
-    int64_t diff = absolute_time_diff_us(last_spawn_time, now) / 1000;
-
-    if (diff > BALL_SPAWN_DELAY)
+    // Encontra o valor máximo para normalização
+    int max_count = 1; // Evita divisão por zero
+    for (int i = 0; i < NUM_BINS; i++)
     {
-        for (int i = 0; i < MAX_BALLS; i++)
+        if (bins[i] > max_count)
+            max_count = bins[i];
+    }
+
+    // Desenha as barras do histograma
+    for (int i = 0; i < NUM_BINS; i++)
+    {
+        int bar_height = (bins[i] * HISTOGRAM_HEIGHT) / max_count;
+        if (bar_height > 0)
         {
-            if (!balls[i].active)
+            int x_start = i * BIN_WIDTH;
+            int x_end = x_start + BIN_WIDTH - 1;
+            int y_start = ssd1306_height - 1;
+            int y_end = y_start - bar_height;
+
+            // Desenha a barra vertical
+            for (int y = y_start; y >= y_end; y--)
             {
-                init_ball(&balls[i]);
-                ball_count++;
-                total_balls++;
-                last_spawn_time = now;
-                break;
+                for (int x = x_start; x <= x_end; x++)
+                {
+                    ssd1306_set_pixel(buffer, x, y, true);
+                }
             }
         }
     }
@@ -142,6 +178,12 @@ int main()
 {
     stdio_init_all();
 
+    // Configuração do botão A (GPIO5 com pull-up)
+    gpio_init(BUTTON_A_PIN);
+    gpio_set_dir(BUTTON_A_PIN, GPIO_IN);
+    gpio_pull_up(BUTTON_A_PIN);
+
+    // Configuração do display
     i2c_init(i2c1, 400 * 1000);
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
@@ -159,17 +201,25 @@ int main()
 
     uint8_t buffer[ssd1306_buffer_length];
 
+    // Inicializa as bolas e o histograma
     for (int i = 0; i < MAX_BALLS; i++)
     {
         balls[i].active = false;
     }
-    last_spawn_time = get_absolute_time();
+    memset(bins, 0, sizeof(bins));
 
     while (true)
     {
+        // Verifica se o botão A foi pressionado (LOW quando pressionado)
+        if (!gpio_get(BUTTON_A_PIN))
+        {
+            show_histogram = !show_histogram; // Alterna a exibição do histograma
+            sleep_ms(200); // Debounce
+        }
+
         memset(buffer, 0, sizeof(buffer));
 
-        spawn_new_ball();
+        spawn_balls();
 
         for (int i = 0; i < MAX_BALLS; i++)
         {
@@ -179,12 +229,17 @@ int main()
 
         draw_pins(buffer);
 
+        // Mostra o histograma se o flag estiver ativo
+        if (show_histogram)
+        {
+            draw_histogram(buffer);
+        }
+
         char text[20];
         sprintf(text, "Total: %d", total_balls);
         ssd1306_draw_string(buffer, 5, 5, text);
 
         render_on_display(buffer, &area);
-
         sleep_ms(16);
     }
 
